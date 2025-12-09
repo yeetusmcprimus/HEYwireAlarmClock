@@ -61,6 +61,8 @@ import org.koin.core.qualifier.named
 import org.koin.core.scope.Scope
 import org.koin.dsl.binds
 import org.koin.dsl.module
+import com.better.alarm.domain.IMqttManager
+import com.better.alarm.domain.MqttAlarmManager
 
 fun Scope.logger(tag: String): Logger {
   return get<LoggerFactory>().createLogger(tag)
@@ -122,7 +124,21 @@ fun startKoin(context: Context): Koin {
     single(named("datastore")) { File(get<Context>().applicationContext.filesDir, "datastore") }
     factory { get<Context>().contentResolver }
     single<DatabaseQuery> { SQLiteDatabaseQuery(get()) }
-    single { Alarms(get(), get(), get(), get(), get(), get(), logger("Alarms"), get()) } binds
+      single<IMqttManager>(createdAtStart = true) {
+          MqttAlarmManager(
+              context = get(),
+              logger = logger("MqttManager"),
+              brokerUrl = "tcp://192.168.50.216:1883"
+              //brokerUrl = "tcp://172.20.10.5:1883"
+
+
+          ).also {
+              // Force connection now
+              Thread.sleep(2000)  // Give it 2 seconds to connect
+              logger("MqttManager").debug { "MQTT initialized, connected: ${it.isConnected()}" }
+          }
+      }
+    single { Alarms(get(),get(), get(), get(), get(), get(), get(), logger("Alarms"), get()) } binds
         arrayOf(IAlarmsManager::class, DatastoreMigration::class)
     single { ScheduledReceiver(get(), get(), get(), get()) }
     single { ToastPresenter(get(), get()) }

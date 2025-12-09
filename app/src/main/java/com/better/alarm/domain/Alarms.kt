@@ -25,10 +25,12 @@ import com.better.alarm.data.Prefs
 import com.better.alarm.data.contentprovider.DatabaseQuery
 import com.better.alarm.data.modify
 import com.better.alarm.logger.Logger
+import com.better.alarm.domain.MqttAlarmManager
 
 /** The Alarms implements application domain logic */
 @SuppressLint("UseSparseArrays")
 class Alarms(
+    private val mqttManager: IMqttManager,
     private val prefs: Prefs,
     private val store: Store,
     private val calendars: Calendars,
@@ -96,6 +98,7 @@ class Alarms(
         store,
         calendars,
         onDelete = { alarms.remove(it) },
+        mqttManager,
     )
   }
 

@@ -53,7 +53,7 @@ private constructor(
       return Prefs(
           is24HourFormat = is24HourFormat,
           preAlarmDuration = factory.intStringDataStore(KEY_PREALARM_DURATION, 30),
-          preAlarmVolume = factory.intDataStore(KEY_PREALARM_VOLUME, 5),
+          preAlarmVolume = factory.intDataStore(KEY_PREALARM_VOLUME, 3),
           snoozeDuration = factory.intStringDataStore(KEY_ALARM_SNOOZE, 10),
           listRowLayout = factory.stringDataStore(LIST_ROW_LAYOUT, LIST_ROW_LAYOUT_BOLD),
           autoSilence = factory.intStringDataStore(KEY_AUTO_SILENCE, 10),

@@ -35,6 +35,7 @@
     -->
     <string-array name="prealarm_duration_entries">
         <item>Off</item>
+        <item>1 minutes</item>
         <item>10 minutes</item>
         <item>20 minutes</item>
         <item>30 minutes</item>
@@ -47,6 +48,7 @@
     -->
     <string-array name="prealarm_duration_values" tools:ignore="MissingTranslation">
         <item>-1</item>
+        <item>1</item>
         <item>10</item>
         <item>20</item>
         <item>30</item>

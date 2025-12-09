@@ -34,7 +34,6 @@ import io.reactivex.disposables.CompositeDisposable
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.*
-
 sealed class Event {
   override fun toString(): String = javaClass.simpleName
 }
@@ -44,6 +43,8 @@ data class Snooze(val hour: Int?, val minute: Int?) : Event()
 data class Change(val value: AlarmValue) : Event()
 
 object PrealarmDurationChanged : Event()
+
+object MqttDismiss : Event()
 
 object Dismiss : Event()
 
@@ -116,6 +117,7 @@ object Create : Event()
  * @enduml
  * ```
  */
+
 class AlarmCore(
     private val alarmStore: AlarmStore,
     private val log: Logger,
@@ -125,7 +127,8 @@ class AlarmCore(
     private val store: Store,
     private val calendars: Calendars,
     private val onDelete: (Int) -> Unit,
-) : Alarm {
+    private val mqttManager: IMqttManager
+    ) : Alarm {
   private val stateMachine: StateMachine<Event>
   private val df: DateFormat
   private val container: AlarmValue
@@ -194,6 +197,9 @@ class AlarmCore(
 
       val initial = mutableTree.keys.firstOrNull { it.name == alarmStore.value.state }
       setInitialState(initial ?: disabledState)
+    }
+    mqttManager.subscribeToCommands() {
+      mqttDismiss()
     }
 
     updateListInStore()
@@ -495,7 +501,10 @@ class AlarmCore(
     inner class FiredState : AlarmState() {
       override fun onEnter(reason: Event) {
         broadcastAlarmState(Intents.ALARM_ALERT_ACTION)
-        val autoSilenceMinutes = autoSilence.blockingFirst()
+        // send MQTT message
+          mqttManager.publishAlarmFired()
+        // val autoSilenceMinutes = autoSilence.blockingFirst()
+        val autoSilenceMinutes = -1 // prevent auto-silencing
         if (autoSilenceMinutes > 0) {
           // -1 means OFF
           val nextTime = calendars.now()
@@ -503,6 +512,14 @@ class AlarmCore(
           setAlarm(nextTime, CalendarType.AUTOSILENCE)
         }
       }
+        override fun onMqttDismiss() {
+            // check this
+            stateMachine.transitionTo(rescheduleTransition)
+        }
+
+        override fun onDismiss() {
+            // do not permit user to dismiss
+        }
 
       override fun onFired() {
         broadcastAlarmState(Intents.ACTION_SOUND_EXPIRED)
@@ -511,10 +528,12 @@ class AlarmCore(
       }
 
       override fun onSnooze(snooze: Snooze) {
-        stateMachine.transitionTo(snoozed)
+        // do not permit snooze (button will still display, won't work)
+        // stateMachine.transitionTo(snoozed)
       }
 
       override fun exit(reason: Event?) {
+        // called by MQTT manager
         broadcastAlarmState(Intents.ALARM_DISMISS_ACTION)
         removeAlarm()
       }
@@ -522,6 +541,7 @@ class AlarmCore(
 
     inner class PreAlarmFiredState : AlarmState() {
       override fun onEnter(reason: Event) {
+        mqttManager.publishPreAlarmFired()
         broadcastAlarmState(Intents.ALARM_PREALARM_ACTION)
         setAlarm(calculateNextTime(), CalendarType.NORMAL)
       }
@@ -531,8 +551,9 @@ class AlarmCore(
       }
 
       override fun onSnooze(snooze: Snooze) {
-        if (snooze.minute != null) {
-          // snooze to time with prealarm -> go to snoozed
+          // remove snooze for pre-alarm
+       if (snooze.minute != null) {
+         // snooze to time with prealarm -> go to snoozed
           stateMachine.transitionTo(snoozed)
         } else {
           stateMachine.transitionTo(preAlarmSnoozed)
@@ -540,7 +561,7 @@ class AlarmCore(
       }
 
       override fun exit(reason: Event?) {
-        removeAlarm()
+      removeAlarm()
         if (reason !is Fired) {
           // do not dismiss because we will immediately fire another event at the service
           broadcastAlarmState(Intents.ALARM_DISMISS_ACTION)
@@ -746,6 +767,7 @@ class AlarmCore(
         is InexactFired -> onInexactFired()
         is RequestSkip -> onRequestSkip()
         is Delete -> onDelete()
+        is MqttDismiss -> onMqttDismiss()
         Create -> {
           check(!BuildConfig.DEBUG) { "Unexpected $event" }
         }
@@ -756,6 +778,8 @@ class AlarmCore(
     protected fun markNotHandled() {
       handled = false
     }
+
+    protected open fun onMqttDismiss() = markNotHandled()
 
     protected open fun onEnable() = markNotHandled()
 
@@ -791,6 +815,10 @@ class AlarmCore(
           store.alarmsSubject().onNext(copy)
         }
         .let { disposable.add(it) }
+  }
+
+  fun mqttDismiss() {
+      stateMachine.sendEvent(MqttDismiss)
   }
 
   fun onAlarmFired() {
@@ -879,6 +907,7 @@ private fun Event.isUserInteraction(): Boolean {
     Disable -> true
     Dismiss -> true
     RequestSkip -> true
+    MqttDismiss -> true
     is Snooze -> true
     Fired -> false
     InexactFired -> false
